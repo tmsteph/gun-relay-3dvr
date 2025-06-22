@@ -1,10 +1,15 @@
-// server.js
-const Gun = require('gun');
 const express = require('express');
-const app = express();
+const Gun = require('gun');
+const cors = require('cors');
 
-const server = app.listen(process.env.PORT || 8765, () => {
-  console.log('Gun relay running on port', process.env.PORT || 8765);
+const app = express();
+const port = process.env.PORT || 8765;
+
+app.use(cors()); // ✅ Allow cross-origin
+app.use(Gun.serve);
+
+const server = app.listen(port, () => {
+  console.log(`Gun relay listening on port ${port}`);
 });
 
 Gun({ web: server });
