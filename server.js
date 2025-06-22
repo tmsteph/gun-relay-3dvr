@@ -8,13 +8,8 @@ const port = process.env.PORT || 8765;
 app.use(cors());
 app.use(Gun.serve);
 
-const server = app.listen(port, () => {
-  console.log(`Gun relay listening on port ${port}`);
+const server = app.listen(port, '0.0.0.0', () => {
+  console.log(`Gun relay listening on http://0.0.0.0:${port}`);
 });
 
-// ✅ Enable persistence and real-time relay sync
-Gun({
-  web: server,
-  radisk: true,   // stores data to disk (needed for multi-client sync)
-  peers: []       // no external peers needed unless you want to join other relays
-});
+Gun({ web: server, radisk: true });
