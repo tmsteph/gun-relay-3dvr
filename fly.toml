@@ -4,8 +4,8 @@ app = "gun-relay-3dvr"
 PORT = "8080"
 
 [[services]]
-  internal_port = 8080
   protocol = "tcp"
+  internal_port = 8080
 
   [services.concurrency]
     type = "connections"
@@ -14,8 +14,11 @@ PORT = "8080"
 
   [[services.ports]]
     port = 80
+    handlers = ["http"]
+
   [[services.ports]]
     port = 443
+    handlers = ["tls", "http"]
 
   [[services.tcp_checks]]
     interval = "15s"
