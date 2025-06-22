@@ -1,10 +1,10 @@
 app = "gun-relay-3dvr"
 
 [env]
-PORT = "8765"
+PORT = "8080"
 
 [[services]]
-  internal_port = 8765
+  internal_port = 8080
   protocol = "tcp"
 
   [services.concurrency]
