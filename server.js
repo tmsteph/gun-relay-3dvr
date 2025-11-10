@@ -6,6 +6,48 @@ require('gun/axe');
 const app = express();
 app.disable('x-powered-by');
 
+const configuredOrigins = (process.env.CORS_ALLOW_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const allowAnyOrigin = configuredOrigins.length === 0 || configuredOrigins.includes('*');
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) {
+    return false;
+  }
+
+  if (allowAnyOrigin) {
+    return true;
+  }
+
+  return configuredOrigins.includes(origin);
+};
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (isAllowedOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, Authorization, gun-sid'
+  );
+  res.setHeader('Access-Control-Expose-Headers', 'gun-sid');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+
+  next();
+});
+
 // Serve Gun assets only (no public dir to avoid tracker heuristics)
 app.use(Gun.serve);
 
