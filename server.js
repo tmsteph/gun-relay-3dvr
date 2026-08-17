@@ -3,6 +3,7 @@ const http = require('http');
 const crypto = require('crypto');
 const Gun = require('gun');
 require('gun/axe');
+const { createCompanionCommandRelay } = require('./companion-command-relay');
 
 const app = express();
 app.disable('x-powered-by');
@@ -170,6 +171,14 @@ function validateReplyEnvelope(value) {
 }
 
 const relayJson = express.json({ limit: '32kb', type: 'application/json' });
+const companionCommands = createCompanionCommandRelay({
+  hasDevice: (deviceId) => {
+    cleanup();
+    return devices.has(deviceId);
+  },
+  authorizeDevice: authorizedDevice,
+});
+companionCommands.mount(app, { json: relayJson, privateHeaders, allowRate });
 
 // Serve Gun assets only (no public dir to avoid tracker heuristics)
 app.use(Gun.serve);
@@ -187,6 +196,7 @@ app.get('/relay/v1/health', (req, res) => {
     oneTimeReads: true,
     ttlMs: RELAY_TTL_MS,
     keyId: relayKeyId,
+    companionCommands: ['health', 'device.status'],
   });
 });
 
