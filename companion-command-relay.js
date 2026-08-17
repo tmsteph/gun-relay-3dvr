@@ -33,10 +33,12 @@ function createCompanionCommandRelay(options = {}) {
     randomToken = (bytes = 18) => crypto.randomBytes(bytes).toString('base64url'),
     agentToken = process.env.COMPANION_AGENT_TOKEN || '',
     hasDevice,
+    listDevices = () => [],
     authorizeDevice,
   } = options;
 
   if (typeof hasDevice !== 'function') throw new TypeError('hasDevice is required');
+  if (typeof listDevices !== 'function') throw new TypeError('listDevices must be a function');
   if (typeof authorizeDevice !== 'function') throw new TypeError('authorizeDevice is required');
 
   const queues = new Map();
@@ -184,6 +186,17 @@ function createCompanionCommandRelay(options = {}) {
   }
 
   function mount(app, { json, privateHeaders, allowRate }) {
+    app.get('/relay/v1/devices', (req, res) => {
+      privateHeaders(res);
+      if (!allowRate(req, 'companion-agent-devices', 120, 60 * 1000)) {
+        return res.status(429).json({ ok: false, error: 'rate limited' });
+      }
+      const auth = authorizeAgent(req);
+      if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+      cleanup();
+      return res.status(200).json({ ok: true, devices: listDevices() });
+    });
+
     app.post('/relay/v1/commands', json, (req, res) => {
       privateHeaders(res);
       if (!allowRate(req, 'companion-agent-command', 120, 60 * 1000)) {
