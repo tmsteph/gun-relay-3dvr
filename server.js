@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const Gun = require('gun');
 require('gun/axe');
 const { createCompanionCommandRelay } = require('./companion-command-relay');
+const { createVercelOidcAuthorizer } = require('./vercel-oidc');
 
 const app = express();
 app.disable('x-powered-by');
@@ -100,7 +101,35 @@ function validateReplyEnvelope(value) {
 }
 
 const relayJson = express.json({ limit: '32kb', type: 'application/json' });
+
+// Agent commands use Vercel workload identity rather than a shared secret.
+// Only the production 3dvr/3dvr-portal workload is admitted. After verification
+// the public OIDC token is replaced with a process-local bearer understood only
+// by the in-memory command module, so downstream code never needs to parse JWTs.
+const vercelOidc = createVercelOidcAuthorizer();
+const internalCompanionAgentToken = randomToken(32);
+function isCompanionAgentRoute(req) {
+  if (req.method === 'GET' && req.path === '/relay/v1/devices') return true;
+  if (req.method === 'POST' && req.path === '/relay/v1/commands') return true;
+  return req.method === 'GET' && req.path.startsWith('/relay/v1/results/');
+}
+app.use(async (req, res, next) => {
+  if (!isCompanionAgentRoute(req)) return next();
+  privateHeaders(res);
+  if (!allowRate(req, 'companion-agent-oidc', 300, 60 * 1000)) {
+    return res.status(429).json({ ok: false, error: 'rate limited' });
+  }
+  try {
+    await vercelOidc.authorizeRequest(req);
+    req.headers.authorization = `Bearer ${internalCompanionAgentToken}`;
+    return next();
+  } catch (_error) {
+    return res.status(401).json({ ok: false, error: 'workload identity required' });
+  }
+});
+
 const companionCommands = createCompanionCommandRelay({
+  agentToken: internalCompanionAgentToken,
   hasDevice: (deviceId) => { cleanup(); return devices.has(deviceId); },
   listDevices: () => { cleanup(); return [...devices.entries()].map(([deviceId, record]) => ({ deviceId, expiresAt: record.expiresAt })); },
   authorizeDevice: authorizedDevice,
@@ -111,7 +140,7 @@ app.use(Gun.serve);
 app.get('/', (_req, res) => res.status(200).send('OK'));
 app.get('/relay/v1/health', (req, res) => {
   privateHeaders(res); cleanup();
-  res.status(200).json({ ok: true, service: '3dvr-private-relay', storage: 'memory-only', oneTimeReads: true, ttlMs: RELAY_TTL_MS, keyId: relayKeyId, companionCommands: ['health', 'device.status'] });
+  res.status(200).json({ ok: true, service: '3dvr-private-relay', storage: 'memory-only', oneTimeReads: true, ttlMs: RELAY_TTL_MS, keyId: relayKeyId, companionCommands: ['health', 'device.status'], agentAuth: 'vercel-oidc' });
 });
 app.get('/relay/v1/public-key', (req, res) => {
   privateHeaders(res); if (!allowRate(req, 'public-key', 60, 60 * 1000)) return res.status(429).json({ ok: false, error: 'rate limited' });
