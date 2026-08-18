@@ -90,6 +90,28 @@ test('remote URL opening requires clean HTTPS', () => {
   }
 });
 
+test('voice authorization requires a bounded opaque nonce', () => {
+  const { relay } = createRelay();
+  const nonce = 'voice_nonce_abcdefghijklmnopqrstuv';
+  const command = relay.normalizeCommand({
+    deviceId: 'device_abcdefghijklmnopqrstuv',
+    requestId: 'request_voiceabcdefghijklmnop',
+    capabilityId: 'voice.authorize',
+    arguments: { nonce },
+    ttlMs: 10_000,
+  });
+  assert.deepEqual(command.arguments, { nonce });
+
+  for (const invalid of ['', 'short', 'contains spaces contains spaces']) {
+    assert.throws(() => relay.normalizeCommand({
+      deviceId: 'device_abcdefghijklmnopqrstuv',
+      requestId: 'request_voiceinvalidabcdefgh',
+      capabilityId: 'voice.authorize',
+      arguments: { nonce: invalid },
+    }), /invalid voice nonce/);
+  }
+});
+
 test('read-only capabilities reject unexpected arguments', () => {
   const { relay } = createRelay();
   assert.throws(() => relay.normalizeCommand({
