@@ -4,7 +4,8 @@ const crypto = require('crypto');
 
 const DEVICE_ID_RE = /^[A-Za-z0-9_-]{22,86}$/;
 const REQUEST_ID_RE = /^[A-Za-z0-9_-]{16,86}$/;
-const ALLOWED_CAPABILITIES = new Set(['health', 'device.status', 'app.open_known', 'url.open']);
+const VOICE_NONCE_RE = /^[A-Za-z0-9_-]{24,128}$/;
+const ALLOWED_CAPABILITIES = new Set(['health', 'device.status', 'app.open_known', 'url.open', 'voice.authorize']);
 const ALLOWED_APP_ALIASES = new Set([
   'settings',
   'chatgpt',
@@ -66,6 +67,12 @@ function normalizeArguments(capabilityId, value) {
       throw new Error('valid https url required');
     }
     return { url: parsed.toString() };
+  }
+
+  if (capabilityId === 'voice.authorize') {
+    const nonce = typeof argumentsValue.nonce === 'string' ? argumentsValue.nonce.trim() : '';
+    if (!VOICE_NONCE_RE.test(nonce)) throw new Error('invalid voice nonce');
+    return { nonce };
   }
 
   throw new Error('unsupported capability');
@@ -336,5 +343,6 @@ function createCompanionCommandRelay(options = {}) {
 module.exports = {
   ALLOWED_CAPABILITIES,
   ALLOWED_APP_ALIASES,
+  VOICE_NONCE_RE,
   createCompanionCommandRelay,
 };
