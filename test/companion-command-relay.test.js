@@ -17,36 +17,24 @@ function createRelay({ agentToken = 'agent-token-abcdefghijklmnopqrstuvwxyz12345
   return {
     relay,
     devices,
-    advance(milliseconds) {
-      clock += milliseconds;
-    },
+    advance(milliseconds) { clock += milliseconds; },
   };
 }
 
 function fakeRequest(authorization) {
   return {
-    get(name) {
-      return name.toLowerCase() === 'authorization' ? authorization || '' : '';
-    },
+    get(name) { return name.toLowerCase() === 'authorization' ? authorization || '' : ''; },
   };
 }
 
 test('agent API is unavailable without a configured agent token', () => {
   const { relay } = createRelay({ agentToken: '' });
-  assert.deepEqual(relay.authorizeAgent(fakeRequest()), {
-    ok: false,
-    status: 503,
-    error: 'agent relay unavailable',
-  });
+  assert.deepEqual(relay.authorizeAgent(fakeRequest()), { ok: false, status: 503, error: 'agent relay unavailable' });
 });
 
 test('agent API rejects an incorrect bearer token', () => {
   const { relay } = createRelay();
-  assert.deepEqual(relay.authorizeAgent(fakeRequest('Bearer wrong-token-wrong-token-wrong-token-wrong-token')), {
-    ok: false,
-    status: 401,
-    error: 'agent authorization required',
-  });
+  assert.deepEqual(relay.authorizeAgent(fakeRequest('Bearer wrong-token-wrong-token-wrong-token-wrong-token')), { ok: false, status: 401, error: 'agent authorization required' });
 });
 
 test('agent API accepts the configured bearer token', () => {
@@ -55,16 +43,61 @@ test('agent API accepts the configured bearer token', () => {
   assert.deepEqual(relay.authorizeAgent(fakeRequest(`Bearer ${token}`)), { ok: true });
 });
 
-test('only read-only capabilities are admitted initially', () => {
+test('high-risk capabilities remain blocked', () => {
   const { relay } = createRelay();
-  assert.throws(
-    () => relay.normalizeCommand({
+  assert.throws(() => relay.normalizeCommand({
+    deviceId: 'device_abcdefghijklmnopqrstuv',
+    requestId: 'request_abcdefghijklmnopqrstuv',
+    capabilityId: 'ui.perform',
+  }), /unsupported capability/);
+});
+
+test('known app opening is admitted only for the bounded alias list', () => {
+  const { relay } = createRelay();
+  const command = relay.normalizeCommand({
+    deviceId: 'device_abcdefghijklmnopqrstuv',
+    requestId: 'request_abcdefghijklmnopqrstuv',
+    capabilityId: 'app.open_known',
+    arguments: { alias: 'maps' },
+  });
+  assert.deepEqual(command.arguments, { alias: 'maps' });
+
+  assert.throws(() => relay.normalizeCommand({
+    deviceId: 'device_abcdefghijklmnopqrstuv',
+    requestId: 'request_zyxwvutsrqponmlkjihgfe',
+    capabilityId: 'app.open_known',
+    arguments: { alias: 'termux' },
+  }), /unsupported app alias/);
+});
+
+test('remote URL opening requires clean HTTPS', () => {
+  const { relay } = createRelay();
+  const command = relay.normalizeCommand({
+    deviceId: 'device_abcdefghijklmnopqrstuv',
+    requestId: 'request_abcdefghijklmnopqrstuv',
+    capabilityId: 'url.open',
+    arguments: { url: 'https://example.com/path' },
+  });
+  assert.equal(command.arguments.url, 'https://example.com/path');
+
+  for (const url of ['http://example.com', 'https://user:pass@example.com/', 'not-a-url']) {
+    assert.throws(() => relay.normalizeCommand({
       deviceId: 'device_abcdefghijklmnopqrstuv',
-      requestId: 'request_abcdefghijklmnopqrstuv',
-      capabilityId: 'ui.perform',
-    }),
-    /unsupported capability/,
-  );
+      requestId: `request_${Buffer.from(url).toString('hex').slice(0, 22).padEnd(22, 'a')}`,
+      capabilityId: 'url.open',
+      arguments: { url },
+    }), /valid https url required/);
+  }
+});
+
+test('read-only capabilities reject unexpected arguments', () => {
+  const { relay } = createRelay();
+  assert.throws(() => relay.normalizeCommand({
+    deviceId: 'device_abcdefghijklmnopqrstuv',
+    requestId: 'request_abcdefghijklmnopqrstuv',
+    capabilityId: 'device.status',
+    arguments: { surprise: true },
+  }), /does not accept arguments/);
 });
 
 test('command moves from queue to inflight to one-time result', () => {
@@ -81,28 +114,15 @@ test('command moves from queue to inflight to one-time result', () => {
   const delivered = relay.takeNext(command.deviceId);
   assert.equal(delivered.requestId, command.requestId);
   assert.equal(delivered.capabilityId, 'device.status');
+  assert.deepEqual(relay.resultStatus(command.requestId), { status: 202, body: { ok: true, requestId: command.requestId, state: 'inflight' } });
 
-  assert.deepEqual(relay.resultStatus(command.requestId), {
-    status: 202,
-    body: { ok: true, requestId: command.requestId, state: 'inflight' },
-  });
-
-  relay.acceptResult(command.deviceId, {
-    requestId: command.requestId,
-    ok: true,
-    data: { batteryPercent: 67 },
-  });
-
+  relay.acceptResult(command.deviceId, { requestId: command.requestId, ok: true, data: { batteryPercent: 67 } });
   const completed = relay.resultStatus(command.requestId);
   assert.equal(completed.status, 200);
   assert.equal(completed.body.ok, true);
   assert.equal(completed.body.commandOk, true);
   assert.deepEqual(completed.body.data, { batteryPercent: 67 });
-
-  assert.deepEqual(relay.resultStatus(command.requestId), {
-    status: 404,
-    body: { ok: false, error: 'request not found' },
-  });
+  assert.deepEqual(relay.resultStatus(command.requestId), { status: 404, body: { ok: false, error: 'request not found' } });
 });
 
 test('duplicate request ids are rejected', () => {
@@ -138,13 +158,9 @@ test('a different device cannot submit a result for an inflight request', () => 
   });
   relay.enqueue(command);
   relay.takeNext(command.deviceId);
-
-  assert.throws(
-    () => relay.acceptResult('device_zyxwvutsrqponmlkjihgfe', {
-      requestId: command.requestId,
-      ok: true,
-      data: {},
-    }),
-    /request is not inflight for this device/,
-  );
+  assert.throws(() => relay.acceptResult('device_zyxwvutsrqponmlkjihgfe', {
+    requestId: command.requestId,
+    ok: true,
+    data: {},
+  }), /request is not inflight for this device/);
 });

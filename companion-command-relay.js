@@ -4,7 +4,17 @@ const crypto = require('crypto');
 
 const DEVICE_ID_RE = /^[A-Za-z0-9_-]{22,86}$/;
 const REQUEST_ID_RE = /^[A-Za-z0-9_-]{16,86}$/;
-const ALLOWED_CAPABILITIES = new Set(['health', 'device.status']);
+const ALLOWED_CAPABILITIES = new Set(['health', 'device.status', 'app.open_known', 'url.open']);
+const ALLOWED_APP_ALIASES = new Set([
+  'settings',
+  'chatgpt',
+  'maps',
+  'gmail',
+  'chrome',
+  'calendar',
+  'camera',
+  'messages',
+]);
 const MAX_COMMAND_TTL_MS = 60 * 1000;
 const DEFAULT_COMMAND_TTL_MS = 15 * 1000;
 const RESULT_TTL_MS = 2 * 60 * 1000;
@@ -25,6 +35,40 @@ function readBearer(req) {
   const header = req.get('authorization') || '';
   const match = /^Bearer\s+([^\s]{32,256})$/.exec(header);
   return match ? match[1] : '';
+}
+
+function normalizeArguments(capabilityId, value) {
+  const argumentsValue = value == null ? {} : value;
+  if (!argumentsValue || typeof argumentsValue !== 'object' || Array.isArray(argumentsValue)) {
+    throw new Error('arguments must be an object');
+  }
+  if (Buffer.byteLength(JSON.stringify(argumentsValue), 'utf8') > MAX_ARGUMENT_BYTES) {
+    throw new Error('arguments too large');
+  }
+
+  if (capabilityId === 'health' || capabilityId === 'device.status') {
+    if (Object.keys(argumentsValue).length !== 0) throw new Error('capability does not accept arguments');
+    return {};
+  }
+
+  if (capabilityId === 'app.open_known') {
+    const alias = typeof argumentsValue.alias === 'string' ? argumentsValue.alias.trim().toLowerCase() : '';
+    if (!ALLOWED_APP_ALIASES.has(alias)) throw new Error('unsupported app alias');
+    return { alias };
+  }
+
+  if (capabilityId === 'url.open') {
+    const raw = typeof argumentsValue.url === 'string' ? argumentsValue.url.trim() : '';
+    if (!raw || raw.length > 2048) throw new Error('valid https url required');
+    let parsed;
+    try { parsed = new URL(raw); } catch (_error) { throw new Error('valid https url required'); }
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+      throw new Error('valid https url required');
+    }
+    return { url: parsed.toString() };
+  }
+
+  throw new Error('unsupported capability');
 }
 
 function createCompanionCommandRelay(options = {}) {
@@ -74,17 +118,11 @@ function createCompanionCommandRelay(options = {}) {
     const capabilityId = typeof body.capabilityId === 'string' ? body.capabilityId.trim() : '';
     const requestedId = typeof body.requestId === 'string' ? body.requestId.trim() : '';
     const requestId = requestedId || randomToken(18);
-    const argumentsValue = body.arguments == null ? {} : body.arguments;
 
     if (!DEVICE_ID_RE.test(deviceId)) throw new Error('invalid device id');
     if (!REQUEST_ID_RE.test(requestId)) throw new Error('invalid request id');
     if (!ALLOWED_CAPABILITIES.has(capabilityId)) throw new Error('unsupported capability');
-    if (!argumentsValue || typeof argumentsValue !== 'object' || Array.isArray(argumentsValue)) {
-      throw new Error('arguments must be an object');
-    }
-    if (Buffer.byteLength(JSON.stringify(argumentsValue), 'utf8') > MAX_ARGUMENT_BYTES) {
-      throw new Error('arguments too large');
-    }
+    const argumentsValue = normalizeArguments(capabilityId, body.arguments);
 
     const ttlRaw = Number(body.ttlMs);
     const ttlMs = Number.isFinite(ttlRaw)
@@ -297,5 +335,6 @@ function createCompanionCommandRelay(options = {}) {
 
 module.exports = {
   ALLOWED_CAPABILITIES,
+  ALLOWED_APP_ALIASES,
   createCompanionCommandRelay,
 };
