@@ -18,13 +18,13 @@ function audienceMatches(value, expected) {
 
 function createVercelOidcAuthorizer(options = {}) {
   const {
-    issuer = 'https://oidc.vercel.com/3dvr',
-    audience = 'https://vercel.com/3dvr',
-    subject = 'owner:3dvr:project:3dvr-portal:environment:production',
-    owner = '3dvr',
-    ownerId = 'team_KXuVUd00RMnDsjoqwdREcZ7J',
+    issuer = 'https://oidc.vercel.com/tmstephs-projects',
+    audience = 'https://vercel.com/tmstephs-projects',
+    subject = 'owner:tmstephs-projects:project:3dvr-portal:environment:production',
+    owner = 'tmstephs-projects',
+    ownerId = 'team_xxJGO7S7h1ZP4BHidYV0CX9Z',
     project = '3dvr-portal',
-    projectId = 'prj_V49UqQXH0kmkYcL0NZFBkklzsbuy',
+    projectId = 'prj_rAhxzdSdrK9MwKjUMeAXGxk8z8Ch',
     environment = 'production',
     fetchImpl = globalThis.fetch,
     now = () => Date.now(),

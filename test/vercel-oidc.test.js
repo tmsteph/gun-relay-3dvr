@@ -5,9 +5,9 @@ const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const { createVercelOidcAuthorizer } = require('../vercel-oidc');
 
-const ISSUER = 'https://oidc.vercel.com/3dvr';
-const AUDIENCE = 'https://vercel.com/3dvr';
-const SUBJECT = 'owner:3dvr:project:3dvr-portal:environment:production';
+const ISSUER = 'https://oidc.vercel.com/tmstephs-projects';
+const AUDIENCE = 'https://vercel.com/tmstephs-projects';
+const SUBJECT = 'owner:tmstephs-projects:project:3dvr-portal:environment:production';
 const NOW_MS = Date.UTC(2026, 7, 17, 18, 10, 0);
 const NOW_SECONDS = Math.floor(NOW_MS / 1000);
 
@@ -19,10 +19,10 @@ function baseClaims(overrides = {}) {
     iat: NOW_SECONDS - 30,
     nbf: NOW_SECONDS - 30,
     exp: NOW_SECONDS + 600,
-    owner: '3dvr',
-    owner_id: 'team_KXuVUd00RMnDsjoqwdREcZ7J',
+    owner: 'tmstephs-projects',
+    owner_id: 'team_xxJGO7S7h1ZP4BHidYV0CX9Z',
     project: '3dvr-portal',
-    project_id: 'prj_V49UqQXH0kmkYcL0NZFBkklzsbuy',
+    project_id: 'prj_rAhxzdSdrK9MwKjUMeAXGxk8z8Ch',
     environment: 'production',
     ...overrides,
   };
@@ -59,21 +59,34 @@ function fixture() {
   return { authorizer, privateKey, calls };
 }
 
-test('accepts the exact production 3dvr-portal workload identity', async () => {
+test('accepts the active production 3dvr-portal workload identity', async () => {
   const { authorizer, privateKey } = fixture();
   const identity = await authorizer.verify(signToken(privateKey, baseClaims()));
   assert.deepEqual(identity, {
-    owner: '3dvr',
+    owner: 'tmstephs-projects',
     project: '3dvr-portal',
     environment: 'production',
     subject: SUBJECT,
   });
 });
 
+test('rejects the stale duplicate 3dvr-team portal identity', async () => {
+  const { authorizer, privateKey } = fixture();
+  const token = signToken(privateKey, baseClaims({
+    iss: 'https://oidc.vercel.com/3dvr',
+    aud: 'https://vercel.com/3dvr',
+    sub: 'owner:3dvr:project:3dvr-portal:environment:production',
+    owner: '3dvr',
+    owner_id: 'team_KXuVUd00RMnDsjoqwdREcZ7J',
+    project_id: 'prj_V49UqQXH0kmkYcL0NZFBkklzsbuy',
+  }));
+  await assert.rejects(() => authorizer.verify(token), /unexpected identity issuer|unexpected identity audience|unexpected identity subject|unexpected identity owner|unexpected identity project/);
+});
+
 test('rejects preview deployments even when signed by Vercel', async () => {
   const { authorizer, privateKey } = fixture();
   const token = signToken(privateKey, baseClaims({
-    sub: 'owner:3dvr:project:3dvr-portal:environment:preview',
+    sub: 'owner:tmstephs-projects:project:3dvr-portal:environment:preview',
     environment: 'preview',
   }));
   await assert.rejects(() => authorizer.verify(token), /unexpected identity subject|unexpected identity environment/);
@@ -82,9 +95,9 @@ test('rejects preview deployments even when signed by Vercel', async () => {
 test('rejects another Vercel project', async () => {
   const { authorizer, privateKey } = fixture();
   const token = signToken(privateKey, baseClaims({
-    sub: 'owner:3dvr:project:donovan-lighting:environment:production',
-    project: 'donovan-lighting',
-    project_id: 'prj_other',
+    sub: 'owner:tmstephs-projects:project:3dvr-web:environment:production',
+    project: '3dvr-web',
+    project_id: 'prj_zDwTJEFSq8X16qyXULAJLW4mCawr',
   }));
   await assert.rejects(() => authorizer.verify(token), /unexpected identity subject|unexpected identity project/);
 });
